@@ -1,0 +1,254 @@
+# Haulboard - equipment downtime, reliability and shift handover for Jira
+# app.id is a placeholder. `forge register` replaces it with your real app ID.
+app:
+  id: ari:cloud:ecosystem::app/326921d0-1569-433d-9bcd-dfc55b8e0204
+  runtime:
+    name: nodejs22.x
+    memoryMB: 256
+    architecture: arm64
+
+permissions:
+  scopes:
+    - read:jira-work
+    - write:jira-work
+
+modules:
+  # ---------------------------------------------------------------
+  # Data model: downtime attributes live in an indexed issue
+  # property, so they are searchable in JQL (hbUnit = "HT-104")
+  # without any screen or field-configuration changes.
+  # ---------------------------------------------------------------
+  jira:entityProperty:
+    - key: haulboard-downtime-index
+      entityType: issue
+      propertyKey: haulboard_downtime
+      values:
+        - path: unitId
+          type: string
+          searchAlias: hbUnit
+        - path: equipmentClass
+          type: string
+          searchAlias: hbClass
+        - path: causeCode
+          type: string
+          searchAlias: hbCause
+        - path: shift
+          type: string
+          searchAlias: hbShift
+        - path: startedAt
+          type: date
+          searchAlias: hbStart
+        - path: endedAt
+          type: date
+          searchAlias: hbEnd
+        - path: safetyNote
+          type: text
+          searchAlias: hbSafety
+
+  # ---------------------------------------------------------------
+  # UI Kit surfaces
+  # ---------------------------------------------------------------
+  jira:projectPage:
+    - key: haulboard-dashboard
+      title: Haulboard
+      resource: dashboard-ui
+      resolver:
+        function: ui-resolver
+      render: native
+      layout: native
+
+  jira:issuePanel:
+    - key: haulboard-unit-panel
+      title: Haulboard - unit history
+      icon: resource:icons;haulboard.svg
+      resource: panel-ui
+      resolver:
+        function: ui-resolver
+      render: native
+
+  jira:globalPage:
+    - key: haulboard-handover
+      title: Haulboard shift handover
+      icon: resource:icons;haulboard.svg
+      resource: handover-ui
+      resolver:
+        function: ui-resolver
+      render: native
+
+  # ---------------------------------------------------------------
+  # Rovo: agent, reusable actions, reusable skill
+  # ---------------------------------------------------------------
+  rovo:agent:
+    - key: shift-supervisor-assistant
+      name: Shift Supervisor Assistant
+      description: >-
+        Answers questions about equipment downtime in Jira, summarises the
+        current shift for handover, reports unit failure history and reliability
+        (MTBF, MTTR, availability) and flags recurring failures.
+      icon: resource:icons;haulboard.svg
+      prompt: resource:agent-prompt;shift-supervisor-assistant.md
+      conversationStarters:
+        - Summarise open downtime for crew B over the last 12 hours
+        - What is the failure history of haul truck HT-104?
+        - Which units have recurring failures this month?
+        - Show fleet MTBF and MTTR by equipment class for the last 30 days
+      actions:
+        - get-unit-history
+        - summarize-shift
+        - get-fleet-reliability
+        - flag-recurring-failure
+      skills:
+        - shift-handover-brief
+      followUpPrompt: >-
+        Suggest the single most useful next question for a shift supervisor,
+        based on the downtime data just shown.
+
+  action:
+    - key: get-unit-history
+      name: Get equipment unit history
+      function: fn-unit-history
+      actionVerb: GET
+      description: >-
+        Downtime history and reliability (failures, downtime hours, MTBF, MTTR,
+        availability) for one equipment unit such as HT-104 or EX-02. Use for
+        questions about a specific truck, excavator, drill or dozer.
+      inputs:
+        unitId:
+          title: Unit ID
+          type: string
+          required: true
+          description: Equipment unit identifier, for example HT-104, EX-02, DR-01, DZ-03.
+        projectKey:
+          title: Project key
+          type: string
+          required: false
+          description: Jira project key that holds downtime issues. Defaults to the
+            current project.
+        days:
+          title: Look-back days
+          type: integer
+          required: false
+          description: Number of days of history to analyse. Default 90.
+
+    - key: summarize-shift
+      name: Summarise shift for handover
+      function: fn-summarize-shift
+      actionVerb: GET
+      description: >-
+        Structured shift handover: open downtime ranked by priority, events
+        started and closed in the shift, safety notes, recurring failures and
+        priorities for the incoming crew. Use at shift change.
+      inputs:
+        projectKey:
+          title: Project key
+          type: string
+          required: false
+          description: Jira project key that holds downtime issues. Defaults to the
+            current project.
+        shift:
+          title: Outgoing crew
+          type: string
+          required: false
+          description: Outgoing crew letter A, B, C or D. If omitted, all crews are
+            included.
+        hours:
+          title: Shift length (hours)
+          type: integer
+          required: false
+          description: Length of the shift window ending now, in hours. Default 12.
+
+    - key: get-fleet-reliability
+      name: Get fleet reliability metrics
+      function: fn-fleet-reliability
+      actionVerb: GET
+      description: >-
+        Fleet downtime and reliability for a project: hours by equipment class
+        and cause, MTBF, MTTR and availability per class and unit, recurring
+        failures, open items by crew. Use for reliability reviews.
+      inputs:
+        projectKey:
+          title: Project key
+          type: string
+          required: false
+          description: Jira project key that holds downtime issues. Defaults to the
+            current project.
+        days:
+          title: Window days
+          type: integer
+          required: false
+          description: Analysis window in days, ending now. Default 30.
+
+    - key: flag-recurring-failure
+      name: Flag recurring failure
+      function: fn-flag-recurring
+      actionVerb: UPDATE
+      description: >-
+        Checks if a unit has the same cause code at least N times in D days. If
+        so, labels the issues hb-recurring-failure and comments on the latest
+        one. Use when asked to flag or escalate a repeat failure.
+      inputs:
+        unitId:
+          title: Unit ID
+          type: string
+          required: true
+          description: Equipment unit identifier, for example HT-104.
+        causeCode:
+          title: Cause code
+          type: string
+          required: false
+          description: Cause code such as HYD, ENG, ELE, TYR. If omitted, the most
+            frequent unplanned cause for the unit is used.
+        projectKey:
+          title: Project key
+          type: string
+          required: false
+          description: Jira project key that holds downtime issues. Defaults to the
+            current project.
+        threshold:
+          title: Minimum occurrences
+          type: integer
+          required: false
+          description: Minimum number of events with the same cause to count as recurring.
+            Default 3.
+        days:
+          title: Window days
+          type: integer
+          required: false
+          description: Window in days. Default 30.
+
+  rovo:skill:
+    - key: shift-handover-brief
+      source:
+        dir: skills/shift-handover-brief
+      dependencies:
+        tools:
+          - summarize-shift
+          - get-unit-history
+          - flag-recurring-failure
+
+  # ---------------------------------------------------------------
+  # Functions
+  # ---------------------------------------------------------------
+  function:
+    - key: ui-resolver
+      handler: index.uiResolver
+    - key: fn-unit-history
+      handler: index.getUnitHistory
+    - key: fn-summarize-shift
+      handler: index.summarizeShift
+    - key: fn-fleet-reliability
+      handler: index.getFleetReliability
+    - key: fn-flag-recurring
+      handler: index.flagRecurringFailure
+
+resources:
+  - key: dashboard-ui
+    path: src/frontend/dashboard.jsx
+  - key: panel-ui
+    path: src/frontend/panel.jsx
+  - key: handover-ui
+    path: src/frontend/handover.jsx
+  - key: icons
+    path: static/icons
+  - key: agent-prompt
+    path: prompts

@@ -1,0 +1,62 @@
+{
+  "name": "haulboard",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Haulboard: equipment downtime, reliability metrics, shift handover and a Rovo agent for heavy-equipment operations in Jira.",
+  "license": "MIT",
+  "scripts": {
+    "test": "jest",
+    "lint": "forge lint",
+    "seed": "node scripts/seed-sample-data.mjs"
+  },
+  "dependencies": {
+    "@forge/api": "^8.4.0",
+    "@forge/bridge": "^7.2.1",
+    "@forge/react": "^12.4.0",
+    "@forge/resolver": "^2.0.2",
+    "react": "^18.3.1"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.29.7",
+    "@babel/preset-env": "^7.29.7",
+    "babel-jest": "^29.7.0",
+    "jest": "^29.7.0"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "testMatch": [
+      "<rootDir>/test/**/*.test.js"
+    ],
+    "moduleFileExtensions": [
+      "js",
+      "mjs",
+      "jsx",
+      "json"
+    ],
+    "transform": {
+      "^.+\\.[mc]?jsx?$": [
+        "babel-jest",
+        {
+          "presets": [
+            [
+              "@babel/preset-env",
+              {
+                "targets": {
+                  "node": "current"
+                }
+              }
+            ]
+          ]
+        }
+      ]
+    },
+    "collectCoverageFrom": [
+      "src/lib/**/*.js",
+      "src/actions/**/*.js",
+      "scripts/sample-data.mjs"
+    ]
+  }
+}
